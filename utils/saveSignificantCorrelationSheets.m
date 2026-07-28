@@ -155,8 +155,17 @@ for k = 1:numel(sigRows)
     %% Build base table for this sheet
     IDColumnName = ' ';   % empty-looking header
 
+    % If X and Y share the same variable name, make the column headers
+    % unique (e.g. "mPFC_r_X" / "mPFC_r_Y") so table() does not error out.
+    xColName = xVarName;
+    yColName = yVarName;
+    if strcmp(xColName, yColName)
+        xColName = sprintf('%s_X', xVarName);
+        yColName = sprintf('%s_Y', yVarName);
+    end
+
     T = table(animalID, xData, yData, ...
-        'VariableNames', {IDColumnName, xVarName, yVarName});
+        'VariableNames', {IDColumnName, xColName, yColName});
 
     %% Add grouping columns if requested
     if strcmp(useGrouping,'Yes')
