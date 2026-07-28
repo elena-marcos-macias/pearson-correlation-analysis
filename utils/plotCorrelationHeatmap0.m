@@ -5,8 +5,7 @@ function [h, outputFile] = plotCorrelationHeatmap(results, outputPath)
 % Creates a heatmap of Pearson correlation coefficients and saves it as
 % a .jpg file in the 'CorrelationResults' folder (same one used by
 % saveCorrelationResults.m). Asks the user for a file name and appends
-% a timestamp automatically. Cells where no correlation could be computed
-% (NaN) are colored black.
+% a timestamp automatically.
 %
 % INPUT
 % -----
@@ -84,16 +83,6 @@ caxis([-1 1]);
 cb = colorbar;
 cb.Label.String = 'Pearson r';
 
-%% Pintar de negro las celdas sin correlación (NaN)
-hold on
-[nanRow, nanCol] = find(isnan(R));
-for k = 1:numel(nanRow)
-    % Rectángulo centrado en la celda (ix,iy), tamaño 1x1
-    rectangle('Position', [nanCol(k)-0.5, nanRow(k)-0.5, 1, 1], ...
-        'FaceColor', 'k', ...
-        'EdgeColor', 'none');
-end
-
 %% Tamaño de letra de las etiquetas (adaptativo)
 fontSizeLabels = max(6, min(11, 300/max(nX,nY)));
 
@@ -110,6 +99,8 @@ set(gca,'FontSize',fontSizeLabels)
 title(baseName)
 
 %% Anotar celdas con |r| > 0.6 (independientemente de p)
+hold on
+
 drawnow
 axPos = get(gca,'Position');
 set(h,'Units','pixels');
