@@ -1,4 +1,4 @@
-function [h, outputFile] = plotCorrelationHeatmap(results, outputPath)
+function [h, outputFile] = plotCorrelationHeatmap(results, outputPath, pColumnForSignificance)
 %==========================================================================
 % plotCorrelationHeatmap.m
 %
@@ -8,11 +8,22 @@ function [h, outputFile] = plotCorrelationHeatmap(results, outputPath)
 % a timestamp automatically. Cells where no correlation could be computed
 % (NaN) are colored black.
 %
+% Cells with |r| > 0.6 are annotated with their r value. If the
+% correlation is also significant according to the chosen p-value
+% column, the value is marked with '*' (raw p < 0.05) or '+'
+% (FDR-adjusted p_adj < 0.05).
+%
 % INPUT
 % -----
-% results    : table returned by runCorrelations.m (debe contener columnas
-%              XVariable, YVariable, r, p)
-% outputPath : carpeta base donde vive (o se creará) 'CorrelationResults'
+% results                : table returned by runCorrelations.m (debe
+%                           contener columnas XVariable, YVariable, r,
+%                           p, and optionally p_adj)
+% outputPath              : carpeta base donde vive (o se creará)
+%                           'CorrelationResults'
+% pColumnForSignificance  : (opcional) qué columna de p usar como
+%                           criterio de significancia: 'p' (por defecto,
+%                           marca con '*') o 'p_adj' (FDR-ajustado,
+%                           marca con '+')
 %
 % OUTPUT
 % ------
@@ -20,6 +31,27 @@ function [h, outputFile] = plotCorrelationHeatmap(results, outputPath)
 % outputFile : ruta completa del archivo .jpg guardado
 %
 %==========================================================================
+
+if nargin < 3 || isempty(pColumnForSignificance)
+    pColumnForSignificance = 'p';
+end
+
+if ismember(pColumnForSignificance, results.Properties.VariableNames)
+    significanceValues = results.(pColumnForSignificance);
+else
+    warning('Column "%s" not found in results table. Using raw p-values instead.', ...
+        pColumnForSignificance);
+    significanceValues = results.p;
+    pColumnForSignificance = 'p';
+end
+
+% Symbol used to mark significant cells: '*' for raw p, '+' for FDR-adjusted p
+if strcmp(pColumnForSignificance,'p_adj')
+    sigSymbol = '+';
+else
+    sigSymbol = '*';
+end
+
 %% Check / create CorrelationResults folder
 if nargin < 2 || isempty(outputPath)
     error('You must provide an output folder to save the heatmap.');
@@ -57,14 +89,14 @@ outputFile = fullfile(resultsFolder,fileName);
 xNames = unique(results.XVariable,'stable');
 yNames = unique(results.YVariable,'stable');
 
-%% Create correlation and p-value matrices
+%% Create correlation and significance matrices
 R = nan(length(yNames),length(xNames));
 P = nan(length(yNames),length(xNames));
 for i = 1:height(results)
     ix = find(strcmp(xNames,results.XVariable{i}));
     iy = find(strcmp(yNames,results.YVariable{i}));
     R(iy,ix) = results.r(i);
-    P(iy,ix) = results.p(i);   % asume que existe columna p
+    P(iy,ix) = significanceValues(i);
 end
 
 nX = length(xNames);
@@ -129,7 +161,7 @@ for iy = 1:nY
     for ix = 1:nX
         if ~isnan(R(iy,ix)) && abs(R(iy,ix)) > 0.6
             if ~isnan(P(iy,ix)) && P(iy,ix) < 0.05
-                txt = sprintf('%.2f*', R(iy,ix));
+                txt = sprintf('%.2f%s', R(iy,ix), sigSymbol);
             else
                 txt = sprintf('%.2f', R(iy,ix));
             end

@@ -2,10 +2,10 @@
 
 MATLAB tool to compute Pearson correlations and linear regressions between two sets of variables (X and Y) read from an Excel workbook, and to automatically generate:
 
-- A results table (correlations, regressions, p-values)
-- A settings sheet documenting exactly how the analysis was configured
+- A results table (correlations, regressions, p-values, and optional FDR-adjusted p-values)
+- A settings sheet documenting exactly how the analysis was configured, including whether multiple comparisons correction was applied
 - One Excel sheet per correlation with |r| > 0.6, containing the raw data used (optionally split by a grouping variable, for easy plotting)
-- A correlation heatmap (.jpg), with cells annotated when |r| > 0.6 (and marked with `*` if p < 0.05)
+- A correlation heatmap (.jpg), with cells annotated when |r| > 0.6 (marked `*` if significant by raw p, or `+` if significant by FDR-adjusted p), and cells where no correlation could be computed shown in black
 
 ---
 
@@ -20,6 +20,7 @@ your-project-folder/
     ├── selectData.m
     ├── checkAnimalOrder.m
     ├── runCorrelations.m
+    ├── benjaminiHochbergFDR.m
     ├── saveCorrelationResults.m
     ├── saveSignificantCorrelationSheets.m
     └── plotCorrelationHeatmap.m
@@ -92,17 +93,30 @@ Identical set of questions as Step 2, but for your Y dataset (sheet, ID column, 
 ### Step 4 — Automatic ID check
 The script automatically checks that the animals used for X and Y match exactly, in the same order. If they don't, it stops with an error and shows a table comparing both ID lists so you can see the mismatch. This usually means your grouping/category selection in Step 2 vs Step 3 filtered the two datasets differently — check that you selected the same animals on both sides.
 
-### Step 5 — Correlations are computed
-No further input needed. The script computes, for every X–Y variable pair: Pearson's r, R², p-value, number of observations (N), and the linear regression equation (slope/intercept).
+### Step 5 — Multiple comparisons correction (FDR)
+1. **"Do you want to apply FDR correction for multiple comparisons?"** (Yes/No)
+   - **If No:** no correction is applied; only the raw p-value (`p`) is available downstream.
+   - **If Yes:**
+     - **"How do you want to group correlations for FDR correction?"**
+       - *Option 1*: all correlations (every X–Y combination) are treated as a single family of tests.
+       - *Option 2*: each Y variable is corrected as its own independent family (e.g. all X vs. one Y variable together, separately from all X vs. another Y variable).
+     - **"Which p-value do you want to use to decide which correlations are significant?"** — this sets the criterion used later for the heatmap asterisks:
+       - *Raw p*: significance is based on the unadjusted p-value.
+       - *Adjusted p (FDR)*: significance is based on the FDR-adjusted p-value (`p_adj`).
 
-### Step 6 — Save results to Excel
+> See section 5 below for guidance on choosing between Option 1 and Option 2, and on how to interpret results correctly depending on which one you pick.
+
+### Step 6 — Correlations are computed
+No further input needed. The script computes, for every X–Y variable pair: Pearson's r, R², raw p-value, number of observations (N), and the linear regression equation (slope/intercept). If FDR correction was requested, an additional `p_adj` column (and a `Significant_adj` boolean column) is added to the results table using the Benjamini-Hochberg method.
+
+### Step 7 — Save results to Excel
 1. **"Enter a name for the output file"** — choose a base name (e.g. `CorrelationAnalysis`). A timestamp is appended automatically, and the file is saved as `.xlsx` inside a `CorrelationResults` subfolder (created automatically next to your original Excel file).
 
 The output file contains two sheets:
-- **Correlations** — the full results table (XVariable, YVariable, N, r, r2, p, Slope, Intercept, Equation).
-- **Settings** — a record of exactly how the analysis was configured (original file, date/time, sheets used, ID/grouping columns, selected categories, selected variables for X and Y), so you can always trace back how a given result file was generated.
+- **Correlations** — the full results table (XVariable, YVariable, N, r, r2, p, Slope, Intercept, Equation, and — if FDR was applied — p_adj, Significant_adj).
+- **Settings** — a record of exactly how the analysis was configured (original file, date/time, whether FDR correction was applied and which method, which p-value was used as the significance criterion, sheets used, ID/grouping columns, selected categories, selected variables for X and Y), so you can always trace back how a given result file was generated.
 
-### Step 7 — Save detail sheets for strong correlations (|r| > 0.6)
+### Step 8 — Save detail sheets for strong correlations (|r| > 0.6)
 1. **"Do you want to use a grouping variable for plotting purposes?"** (Yes/No)
    - **If No:** each strong correlation gets a sheet with 3 columns only (see layout below).
    - **If Yes:**
@@ -110,7 +124,7 @@ The output file contains two sheets:
      - **"Select the column containing the animal IDs"** (in that sheet).
      - **"Select the grouping variable"** (e.g. `Sex`).
 
-This is asked **once** and applied to every strong correlation found. For each correlation with |r| > 0.6, a new sheet named `VariableX_&_VariableY` is added to the results Excel file, with:
+This is asked **once** and applied to every strong correlation found. For every correlation with |r| > 0.6 — regardless of significance — a new sheet named `VariableX_&_VariableY` is added to the results Excel file, with:
 
 | Column | Content |
 |---|---|
@@ -119,24 +133,35 @@ This is asked **once** and applied to every strong correlation found. For each c
 | 3 (header = Y variable name) | Y values |
 | 4+ (header = category name, only if grouping was used) | Y values split by category — **only for categories actually present among the animals used in that specific correlation** (e.g. if a correlation only involves animals with `Sex = Female`, no `Male` column will be created) |
 
-If fewer than 2 categories are present among the animals in a given correlation, the grouping columns are skipped for that sheet only (columns 1–3 are still saved).
+If fewer than 2 categories are present among the animals in a given correlation, the grouping columns are skipped for that sheet only (columns 1–3 are still saved). If X and Y happen to be the same variable name, the column headers are automatically disambiguated (e.g. `mPFC_r_X` / `mPFC_r_Y`).
 
-### Step 8 — Heatmap
+### Step 9 — Heatmap
 1. **"Enter a name for the heatmap file"** — choose a base name (e.g. `CorrelationHeatmap`). A timestamp is appended automatically, and the image is saved as a `.jpg` (300 dpi) in the same `CorrelationResults` folder as the Excel output.
 
-The heatmap shows all X–Y Pearson r values on a symmetric blue–white–red scale (−1 to 1). Any cell with |r| > 0.6 is annotated with its value, and marked with a trailing `*` if that correlation is also statistically significant (p < 0.05).
+The heatmap shows all X–Y Pearson r values on a symmetric blue–white–red scale (−1 to 1). Cells where no correlation could be computed (e.g. fewer than 3 valid animal pairs) are shown in **black**. Any cell with |r| > 0.6 is annotated with its value, marked with:
+- `*` if significant by the raw p-value (p < 0.05), or
+- `+` if significant by the FDR-adjusted p-value (p_adj < 0.05)
+
+— whichever criterion you chose in Step 5. If no FDR correction was applied, the raw p-value is always used and cells are marked with `*`.
 
 ---
 
-## 5. Output summary
+## 5. Choosing between FDR Option 1 and Option 2
+
+- **Option 1 (global family)**: use this if you plan to interpret results across both directions — e.g. "region X correlates with several ECG parameters" **and** "ECG parameter Y correlates with several regions" — since all comparisons share the same correction.
+- **Option 2 (per-Y family)**: use this if each Y variable will be reported/discussed as its own independent analysis (e.g. a separate results section or figure per ECG parameter). In this case, statements grouped **by Y variable** (e.g. "LF correlates with the cortex, amygdala, and hippocampus") are correctly backed by the correction. Statements grouped **by X variable across different Y's** (e.g. "the cortex correlates with HR, LF, and HF") are **not** rigorously corrected in that direction and should be treated as exploratory observations rather than FDR-confirmed findings.
+
+---
+
+## 6. Output summary
 
 After a full run, inside `CorrelationResults/` (created next to your original Excel file) you will find:
 
 ```
 CorrelationResults/
 ├── CorrelationAnalysis_20260728T143210.xlsx
-│     ├── Correlations           <- full results table
-│     ├── Settings                <- analysis configuration log
+│     ├── Correlations           <- full results table (+ p_adj if FDR applied)
+│     ├── Settings                <- analysis configuration log (incl. FDR settings)
 │     └── VariableX_&_VariableY   <- one sheet per correlation with |r| > 0.6
 │
 └── CorrelationHeatmap_20260728T143245.jpg
@@ -144,7 +169,7 @@ CorrelationResults/
 
 ---
 
-## 6. Troubleshooting
+## 7. Troubleshooting
 
 - **"The order of the X and Y variables does not match"** → your X and Y grouping/category selections filtered different animals. Re-run and make sure both selections keep the same set of animals.
 - **"No sheets found in Excel file"** → check the file isn't corrupted or open in another program while MATLAB tries to read it.

@@ -1,9 +1,10 @@
-function results = runCorrelations(X,Y)
+function results = runCorrelations(X,Y,correctionOption)
 %==========================================================================
 % runCorrelations.m
 %
 % Calculates Pearson correlations and linear regressions between all
-% variables contained in X and Y.
+% variables contained in X and Y. Optionally applies Benjamini-Hochberg
+% FDR correction for multiple comparisons.
 %
 % INPUT
 % -----
@@ -13,11 +14,26 @@ function results = runCorrelations(X,Y)
 % Y.Data
 % Y.VariableNames
 %
+% correctionOption : (optional) how to group correlations for FDR
+%                     correction. One of:
+%                       'none' (default) - no correction applied
+%                       'global'         - all correlations treated as a
+%                                          single family of tests
+%                       'perY'           - each Y variable corrected as
+%                                          an independent family
+%
 % OUTPUT
 % ------
-% results : table
+% results : table, with columns XVariable, YVariable, N, r, r2, p,
+%           Slope, Intercept, Equation, p_adj, Significant_adj
+%           (p_adj and Significant_adj are NaN/false when
+%           correctionOption = 'none')
 %
 %==========================================================================
+
+if nargin < 3 || isempty(correctionOption)
+    correctionOption = 'none';
+end
 
 %% Number of variables
 
@@ -146,6 +162,30 @@ results = table( ...
     'Slope',...
     'Intercept',...
     'Equation'});
+
+%% Multiple comparisons correction (FDR, Benjamini-Hochberg)
+results.p_adj = nan(height(results),1);
+results.Significant_adj = false(height(results),1);
+
+switch correctionOption
+    case 'none'
+        % no correction applied; p_adj stays NaN
+
+    case 'global'
+        results.p_adj = benjaminiHochbergFDR(results.p);
+        results.Significant_adj = results.p_adj < 0.05;
+
+    case 'perY'
+        yVars = unique(results.YVariable,'stable');
+        for i = 1:numel(yVars)
+            idx = results.YVariable == yVars(i);
+            results.p_adj(idx) = benjaminiHochbergFDR(results.p(idx));
+        end
+        results.Significant_adj = results.p_adj < 0.05;
+
+    otherwise
+        warning('Unknown correctionOption "%s". No correction applied.', correctionOption);
+end
 
 %% Sort by p-value
 

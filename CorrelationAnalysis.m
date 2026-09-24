@@ -6,18 +6,30 @@
 % Workflow
 % --------
 % 1. Select Excel file
-% 2. Select X variables
-% 3. Select Y variables
-% 4. Check that animal IDs match
-% 5. Compute Pearson correlations and linear regressions
-% 6. Save results to Excel
+% 2. Select X variables (sheet, ID column, optional grouping filter, variables)
+% 3. Select Y variables (sheet, ID column, optional grouping filter, variables)
+% 4. Check that animal IDs match between X and Y
+% 5. Ask whether to apply FDR correction for multiple comparisons and,
+%    if so, which grouping to use (single family vs. per-Y-variable family)
+%    and which p-value (raw or FDR-adjusted) to use as significance criterion
+% 6. Compute Pearson correlations and linear regressions (with optional
+%    FDR-adjusted p-values)
+% 7. Save results and analysis settings to Excel
+% 8. Save one Excel sheet per correlation with |r| > 0.6, containing the
+%    raw data used (optionally split by a grouping variable)
+% 9. Plot and save a correlation heatmap (cells with |r| > 0.6 annotated;
+%    marked with '*' if significant by raw p, or '+' if significant by
+%    FDR-adjusted p, depending on the chosen criterion)
 %
-% Required functions
-% ------------------
+% Required functions (utils/)
+% ----------------------------
 % selectData.m
 % checkAnimalOrder.m
 % runCorrelations.m
+% benjaminiHochbergFDR.m
 % saveCorrelationResults.m
+% saveSignificantCorrelationSheets.m
+% plotCorrelationHeatmap.m
 %
 % ========================================================================
 
@@ -82,12 +94,61 @@ checkAnimalOrder(X.ID,Y.ID);
 fprintf('OK\n');
 
 %% ------------------------------------------------------------------------
+% Multiple comparisons correction (FDR)
+% -------------------------------------------------------------------------
+applyFDR = questdlg( ...
+    'Do you want to apply FDR correction for multiple comparisons?', ...
+    'Multiple comparisons correction', ...
+    'Yes','No','No');
+
+if strcmp(applyFDR,'Yes')
+
+    fdrChoice = questdlg( ...
+        sprintf(['How do you want to group correlations for FDR correction?\n\n' ...
+        'Option 1: all correlations belong to a single family of tests.\n' ...
+        'Option 2: each Y variable is corrected as an independent family.']), ...
+        'FDR correction method', ...
+        'Option 1','Option 2','Option 1');
+
+    if isempty(fdrChoice)
+        error('Analysis cancelled by user.');
+    end
+
+    if strcmp(fdrChoice,'Option 1')
+        correctionOption = 'global';
+    else
+        correctionOption = 'perY';
+    end
+
+    % Ask which p-value to use as the significance criterion
+    significanceChoice = questdlg( ...
+        sprintf(['Which p-value do you want to use to decide which correlations\n' ...
+        'are significant (for the detail sheets and the heatmap asterisks)?']), ...
+        'Significance criterion', ...
+        'Raw p','Adjusted p (FDR)','Adjusted p (FDR)');
+
+    if isempty(significanceChoice)
+        error('Analysis cancelled by user.');
+    end
+
+    if strcmp(significanceChoice,'Raw p')
+        pColumnForSignificance = 'p';
+    else
+        pColumnForSignificance = 'p_adj';
+    end
+
+else
+    correctionOption = 'none';
+    pColumnForSignificance = 'p';
+end
+
+%% ------------------------------------------------------------------------
 % Run correlations
 % -------------------------------------------------------------------------
 
 fprintf('\nRunning correlations...\n');
 
-results = runCorrelations(X,Y);
+results = runCorrelations(X,Y,correctionOption);
 
 fprintf('Analysis completed.\n');
 
@@ -103,7 +164,7 @@ disp(results)
 % Save results
 % -------------------------------------------------------------------------
 
-outputFile = saveCorrelationResults(results, X, Y, excelFile, filePath);
+outputFile = saveCorrelationResults(results, X, Y, excelFile, filePath, correctionOption, pColumnForSignificance);
 
 fprintf('\nResults saved successfully.\n');
 
@@ -122,7 +183,7 @@ disp('|r| > 0.6 correlations saved to individual Excel sheets.')
 %% ------------------------------------------------------------------------
 % Plot correlation heatmap
 % -------------------------------------------------------------------------
-plotCorrelationHeatmap(results, filePath);
+plotCorrelationHeatmap(results, filePath, pColumnForSignificance);
 
 disp(' ');
 disp('Heat Map saved.')
